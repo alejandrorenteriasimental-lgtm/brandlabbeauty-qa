@@ -10,6 +10,9 @@ Automatización en la nube de brandlabbeauty.org. No depende de ninguna computad
 ## Alertas
 Si algo falla, se crea un issue con la etiqueta `alerta-qa`, o se comenta en el que ya esté abierto, y GitHub avisa por correo. Cuando todo vuelve a pasar, el issue se cierra solo.
 
+## Privacidad
+Mientras el repositorio sea público, el job de analítica no corre (`if: github.event.repository.private`): en un repositorio público los datos de Search Console y GA4 quedarían a la vista de cualquiera. Ese job se activa solo si el repositorio vuelve a ser privado.
+
 ## Secretos opcionales
 Se configuran en *Settings → Secrets and variables → Actions*. Nunca se comparten por chat.
 - `GOOGLE_SA_JSON`: la llave JSON de una cuenta de servicio de Google Cloud (gratuita). Esa cuenta necesita acceso «Restringido» en Search Console y «Lector» en GA4.
