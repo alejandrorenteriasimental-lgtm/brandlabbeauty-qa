@@ -2,18 +2,20 @@
 // Un rendimiento móvil < 70 en una página sí cuenta como error. Clave opcional: secreto PSI_KEY (nunca se imprime).
 import { appendFileSync, writeFileSync } from 'node:fs';
 const BASE = (process.env.SITIO || 'https://brandlabbeauty.org').replace(/\/$/, '');
-const PAGINAS = ['/', '/consultoria', '/marketing', '/herramientas', '/calculadora-precio-servicio', '/guias'];
+// Sin clave, la cuota anónima de Google casi siempre responde 429: se prueban solo 3 páginas, un intento cada una, para no gastar minutos.
+const PAGINAS = process.env.PSI_KEY ? ['/', '/consultoria', '/marketing', '/herramientas', '/calculadora-precio-servicio', '/guias'] : ['/', '/consultoria', '/herramientas'];
+const INTENTOS = process.env.PSI_KEY ? 3 : 1;
 const key = process.env.PSI_KEY ? '&key=' + encodeURIComponent(process.env.PSI_KEY) : '';
 const filas = ['', '## PageSpeed (móvil, laboratorio)', '', '| Página | Rendimiento | Accesibilidad | SEO | LCP | CLS |', '|---|---|---|---|---|---|'];
 const errores = [], avisos = [];
 const pedir = async url => {
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < INTENTOS; i++) {
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(90000) });
       if (r.status === 200) return await r.json();
-      if (r.status === 429 || r.status >= 500) { await new Promise(s => setTimeout(s, 15000 * (i + 1))); continue; }
+      if ((r.status === 429 || r.status >= 500) && i < INTENTOS - 1) { await new Promise(s => setTimeout(s, 15000 * (i + 1))); continue; }
       throw new Error('HTTP ' + r.status);
-    } catch (e) { if (i === 2) throw e; }
+    } catch (e) { if (i === INTENTOS - 1) throw e; }
   }
   throw new Error('cuota o servicio no disponible');
 };
