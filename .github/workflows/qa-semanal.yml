@@ -1,0 +1,98 @@
+# Auditoría semanal de brandlabbeauty.org en la nube (independiente de cualquier computadora).
+# Cada job falla de verdad si encuentra errores (sin continue-on-error). Un solo job de alertas al final:
+#  - si algo falló o se canceló: comenta en el issue abierto «alerta-qa» (o lo crea si no existe) → GitHub te avisa por correo;
+#  - si todo pasó y había alerta abierta: la cierra. Así no se duplican alertas.
+# Consumo: ~5 min por ejecución → ~25 min/mes de los 2,000 gratuitos de un repositorio privado.
+name: QA semanal del sitio
+on:
+  schedule:
+    - cron: '17 15 * * 1'   # lunes 09:17 CDMX (15:17 UTC)
+  workflow_dispatch:
+    inputs:
+      url_prueba:
+        description: 'Prueba controlada: ruta extra que se revisa como si estuviera en el sitemap (p. ej. /no-existe-prueba-qa)'
+        required: false
+        default: ''
+permissions: {}            # nada por defecto; cada job pide lo mínimo
+concurrency: { group: qa-semanal, cancel-in-progress: false }
+
+jobs:
+  sitio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Revisar URL, enlaces, canonical, WhatsApp y vigencias
+        run: node scripts/qa.mjs
+        env: { QA_URL_EXTRA: '${{ inputs.url_prueba }}' }
+      - name: PageSpeed (fallos de la API = aviso; rendimiento < 70 = error)
+        if: always()
+        run: node scripts/pagespeed.mjs
+        env: { PSI_KEY: '${{ secrets.PSI_KEY }}' }
+      - name: Guardar informe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-qa
+          path: |
+            informe-qa.md
+            qa.json
+            psi.json
+          retention-days: 90
+          if-no-files-found: warn
+
+  analitica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Search Console, URL Inspection, GA4 y Bing (secciones sin secreto quedan «bloqueadas»)
+        run: node scripts/analitica.mjs
+        env:
+          GOOGLE_SA_JSON: '${{ secrets.GOOGLE_SA_JSON }}'
+          GA4_PROPERTY_ID: '${{ secrets.GA4_PROPERTY_ID }}'
+          BING_API_KEY: '${{ secrets.BING_API_KEY }}'
+      - name: Guardar analítica
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analitica
+          path: |
+            analitica.md
+            analitica.json
+          retention-days: 90
+          if-no-files-found: warn
+
+  alerta:
+    needs: [sitio, analitica]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { issues: write, actions: read }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: informe-qa }
+        continue-on-error: true   # solo la descarga: si no hay informe, la alerta se crea igual con el enlace a la ejecución
+      - name: Crear, actualizar o cerrar la alerta
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          GH_REPO: '${{ github.repository }}'
+          SITIO: '${{ needs.sitio.result }}'
+          ANALITICA: '${{ needs.analitica.result }}'
+          RUN: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+        run: |
+          gh label create alerta-qa --color B99C4E --description "Alerta automática del QA" 2>/dev/null || true
+          ABIERTA=$(gh issue list --label alerta-qa --state open --json number --jq '.[0].number')
+          if [ "$SITIO" = "success" ] && [ "$ANALITICA" = "success" ]; then
+            [ -n "$ABIERTA" ] && gh issue close "$ABIERTA" --comment "Resuelto: la ejecución $RUN terminó sin errores."
+            echo "Sin errores."; exit 0
+          fi
+          { echo "**Resultado:** sitio = $SITIO · analítica = $ANALITICA"; echo; echo "Ejecución: $RUN"; echo; [ -f informe-qa.md ] && sed -n '1,60p' informe-qa.md; } > cuerpo.md
+          if [ -n "$ABIERTA" ]; then gh issue comment "$ABIERTA" --body-file cuerpo.md
+          else gh issue create --title "Alerta QA brandlabbeauty.org · $(date +%F)" --label alerta-qa --body-file cuerpo.md; fi
