@@ -45,6 +45,8 @@ jobs:
           if-no-files-found: warn
 
   analitica:
+    # Solo en repositorio privado: los datos de Search Console y GA4 no deben quedar en artefactos públicos.
+    if: ${{ github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions: { contents: read }
@@ -89,7 +91,7 @@ jobs:
         run: |
           gh label create alerta-qa --color B99C4E --description "Alerta automática del QA" 2>/dev/null || true
           ABIERTA=$(gh issue list --label alerta-qa --state open --json number --jq '.[0].number')
-          if [ "$SITIO" = "success" ] && [ "$ANALITICA" = "success" ]; then
+          if [ "$SITIO" = "success" ] && { [ "$ANALITICA" = "success" ] || [ "$ANALITICA" = "skipped" ]; }; then
             [ -n "$ABIERTA" ] && gh issue close "$ABIERTA" --comment "Resuelto: la ejecución $RUN terminó sin errores."
             echo "Sin errores."; exit 0
           fi
