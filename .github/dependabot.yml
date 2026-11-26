@@ -1,0 +1,6 @@
+# Propone actualizar las acciones fijadas por SHA cuando haya versiones nuevas (gratis).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
