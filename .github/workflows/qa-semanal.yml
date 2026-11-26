@@ -2,11 +2,12 @@
 # Cada job falla de verdad si encuentra errores (sin continue-on-error). Un solo job de alertas al final:
 #  - si algo falló o se canceló: comenta en el issue abierto «alerta-qa» (o lo crea si no existe) → GitHub te avisa por correo;
 #  - si todo pasó y había alerta abierta: la cierra. Así no se duplican alertas.
-# Consumo: ~5 min por ejecución → ~25 min/mes de los 2,000 gratuitos de un repositorio privado.
-name: QA semanal del sitio
+# Consumo: gratis en repositorio público. Acciones fijadas por SHA de commit (Dependabot propone actualizaciones).
+name: QA del sitio
 on:
   schedule:
-    - cron: '17 15 * * 1'   # lunes 09:17 CDMX (15:17 UTC)
+    - cron: '17 15 * * *'   # diario 09:17 CDMX: disponibilidad, enlaces, canonical, WhatsApp y vigencias
+    - cron: '19 15 * * 1'   # lunes 09:19 CDMX: lo mismo + PageSpeed
   workflow_dispatch:
     inputs:
       url_prueba:
@@ -22,19 +23,19 @@ jobs:
     timeout-minutes: 15
     permissions: { contents: read }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: '20' }
       - name: Revisar URL, enlaces, canonical, WhatsApp y vigencias
         run: node scripts/qa.mjs
         env: { QA_URL_EXTRA: '${{ inputs.url_prueba }}' }
-      - name: PageSpeed (fallos de la API = aviso; rendimiento < 70 = error)
-        if: always()
+      - name: PageSpeed (solo lunes o manual; fallos de la API = aviso; rendimiento < 70 = error)
+        if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.schedule == '19 15 * * 1') }}
         run: node scripts/pagespeed.mjs
         env: { PSI_KEY: '${{ secrets.PSI_KEY }}' }
       - name: Guardar informe
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: informe-qa
           path: |
@@ -51,8 +52,8 @@ jobs:
     timeout-minutes: 15
     permissions: { contents: read }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: '20' }
       - name: Search Console, URL Inspection, GA4 y Bing (secciones sin secreto quedan «bloqueadas»)
         run: node scripts/analitica.mjs
@@ -62,7 +63,7 @@ jobs:
           BING_API_KEY: '${{ secrets.BING_API_KEY }}'
       - name: Guardar analítica
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: analitica
           path: |
@@ -78,7 +79,7 @@ jobs:
     timeout-minutes: 5
     permissions: { issues: write, actions: read }
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { name: informe-qa }
         continue-on-error: true   # solo la descarga: si no hay informe, la alerta se crea igual con el enlace a la ejecución
       - name: Crear, actualizar o cerrar la alerta
